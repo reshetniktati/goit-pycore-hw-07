@@ -5,7 +5,7 @@ from datetime import datetime, date, timedelta
 
 
 class Field:
-    def __init__(self, value: str):
+    def __init__(self, value):
         self.value = value
 
     def __str__(self) -> str:
@@ -32,18 +32,29 @@ class Phone(Field):
 
 
 class Birthday(Field):
+    """
+    Зберігаємо дату в єдиному полі value як date-об'єкт.
+    Немає дубляжу типу value + date_value.
+    """
 
     def __init__(self, value: str):
-
         try:
             dt = datetime.strptime(value, "%d.%m.%Y").date()
         except ValueError:
             raise ValueError("Invalid date format. Use DD.MM.YYYY")
-        self.date_value: date = dt
-        super().__init__(value)
+        # зберігаємо date, а не сирий рядок
+        super().__init__(dt)
+
+    @property
+    def date(self) -> date:
+        return self.value
+
+    def __str__(self) -> str:
+        # красивий формат для виводу
+        return self.value.strftime("%d.%m.%Y")
 
     def __repr__(self) -> str:
-        return f"Birthday({self.value})"
+        return f"Birthday({self.value.strftime('%d.%m.%Y')})"
 
 
 class Record:
@@ -81,7 +92,7 @@ class Record:
 
     def __str__(self) -> str:
         phones_str = "; ".join(phone.value for phone in self.phones) if self.phones else "no phones"
-        birthday_str = f", birthday: {self.birthday.value}" if self.birthday else ""
+        birthday_str = f", birthday: {self.birthday}" if self.birthday else ""
         return f"Contact name: {self.name.value}, phones: {phones_str}{birthday_str}"
 
 
@@ -97,7 +108,6 @@ class AddressBook(UserDict):
         if name in self.data:
             del self.data[name]
 
-
     def get_upcoming_birthdays(self) -> List[Dict[str, str]]:
 
         today = date.today()
@@ -107,7 +117,7 @@ class AddressBook(UserDict):
             if not record.birthday:
                 continue
 
-            bday: date = record.birthday.date_value
+            bday: date = record.birthday.date
             this_year_bday = bday.replace(year=today.year)
 
             if this_year_bday < today:
@@ -141,11 +151,13 @@ def input_error(func: Callable) -> Callable:
             return "Contact not found."
         except IndexError:
             return "Enter arguments."
+        except AttributeError:
+            # коли record == None і ми звертаємось до його атрибутів
+            return "Contact not found."
         except ValueError as e:
             msg = str(e).strip()
             return msg if msg else "Give me name and phone please."
     return inner
-
 
 
 def parse_input(user_input: str) -> Tuple[str, ...]:
@@ -180,8 +192,7 @@ def change_contact(args, book: AddressBook) -> str:
     if len(args) == 2:
         name, new_phone = args
         record = book.find(name)
-        if record is None:
-            raise KeyError(name)
+        # якщо record == None -> нижче впаде з AttributeError
         if len(record.phones) == 0:
             record.add_phone(new_phone)
             return "Contact updated."
@@ -193,8 +204,7 @@ def change_contact(args, book: AddressBook) -> str:
     elif len(args) == 3:
         name, old_phone, new_phone = args
         record = book.find(name)
-        if record is None:
-            raise KeyError(name)
+        # якщо record == None -> AttributeError у record.edit_phone(...)
         record.edit_phone(old_phone, new_phone)
         return "Contact updated."
     else:
@@ -205,8 +215,7 @@ def change_contact(args, book: AddressBook) -> str:
 def show_phone(args, book: AddressBook) -> str:
     name = args[0]
     record = book.find(name)
-    if record is None:
-        raise KeyError(name)
+    # якщо record == None -> AttributeError у record.phones
     if not record.phones:
         return "No phones."
     return "; ".join(ph.value for ph in record.phones)
@@ -230,7 +239,6 @@ def add_birthday(args, book: AddressBook) -> str:
     name, bday_str = args[0], args[1]
     record = book.find(name)
     if record is None:
-
         record = Record(name)
         book.add_record(record)
     record.add_birthday(bday_str)
@@ -244,11 +252,10 @@ def show_birthday(args, book: AddressBook) -> str:
         raise ValueError("Enter contact name.")
     name = args[0]
     record = book.find(name)
-    if record is None:
-        raise KeyError(name)
+    # якщо record == None -> AttributeError при доступі до record.birthday
     if not record.birthday:
         return "No birthday set."
-    return record.birthday.value
+    return str(record.birthday)
 
 
 @input_error
@@ -270,8 +277,8 @@ def delete_contact(args, book: AddressBook) -> str:
         raise ValueError("Enter user name.")
     name = args[0]
     record = book.find(name)
-    if record is None:
-        raise KeyError(name)
+    # змушуємо впасти з AttributeError, якщо контакту немає
+    _ = record.name
     book.delete(name)
     return "Contact deleted."
 
@@ -290,8 +297,6 @@ def help_text() -> str:
         "  birthdays                          -> Show upcoming birthdays (next 7 days)\n"
         "  close | exit                       -> Quit\n"
     )
-
-
 
 
 def main() -> None:
